@@ -1,0 +1,45 @@
+# Personal, single-target build for local testing — NOT part of the
+# project's real release pipeline (see _build.yml / dry-run.yml / release.yml
+# for that: 8-platform matrix, VirusTotal scanning, provenance attestation,
+# hours-long). This just needs one Windows exe with the UI embedded, from
+# whatever branch is checked out, as fast as possible.
+name: Personal Windows Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          path-type: inherit
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-zlib
+            make
+            python
+            unzip
+            zip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build release binary with UI
+        shell: msys2 {0}
+        run: scripts/build.sh --with-ui CC=clang CXX=clang++
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codebase-memory-mcp-windows
+          path: build/c/codebase-memory-mcp.exe
+          if-no-files-found: error
