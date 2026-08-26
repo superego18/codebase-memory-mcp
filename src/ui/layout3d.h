@@ -60,10 +60,13 @@ typedef enum {
 /* Compute layout for a project.
  * center_node: QN of center (for detail level), NULL for overview
  * radius: hop distance from center (for detail level)
+ * path_filter: glob on file_path scoping which nodes are eligible before
+ *   max_nodes truncation is applied (same semantics as cbm_search_params_t
+ *   .file_pattern), NULL/empty for no scoping
  * max_nodes: cap on returned nodes */
 cbm_layout_result_t *cbm_layout_compute(cbm_store_t *store, const char *project,
                                         cbm_layout_level_t level, const char *center_node,
-                                        int radius, int max_nodes);
+                                        int radius, const char *path_filter, int max_nodes);
 
 /* Free a layout result. */
 void cbm_layout_free(cbm_layout_result_t *result);

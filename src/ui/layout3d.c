@@ -506,7 +506,7 @@ static int find_node_index(const node_id_entry_t *map, int count, int64_t id) {
 
 cbm_layout_result_t *cbm_layout_compute(cbm_store_t *store, const char *project,
                                         cbm_layout_level_t level, const char *center_node,
-                                        int radius, int max_nodes) {
+                                        int radius, const char *path_filter, int max_nodes) {
     if (!store || !project)
         return NULL;
     max_nodes = clamp_max_nodes(max_nodes);
@@ -521,6 +521,8 @@ cbm_layout_result_t *cbm_layout_compute(cbm_store_t *store, const char *project,
     params.limit = max_nodes;
     params.min_degree = -1;
     params.max_degree = -1;
+    if (path_filter && path_filter[0] != '\0')
+        params.file_pattern = path_filter;
 
     cbm_search_output_t search_out;
     memset(&search_out, 0, sizeof(search_out));

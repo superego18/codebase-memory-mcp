@@ -282,7 +282,7 @@ TEST(layout_empty_graph) {
 
     /* No nodes in store → empty result */
     cbm_layout_result_t *r =
-        cbm_layout_compute(store, "test-project", CBM_LAYOUT_OVERVIEW, NULL, 0, 100);
+        cbm_layout_compute(store, "test-project", CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, 100);
     ASSERT_NOT_NULL(r);
     ASSERT_EQ(r->node_count, 0);
     ASSERT_EQ(r->edge_count, 0);
@@ -309,7 +309,7 @@ TEST(layout_single_node) {
     int64_t id = cbm_store_upsert_node(store, &node);
     ASSERT_GT(id, 0);
 
-    cbm_layout_result_t *r = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, 100);
+    cbm_layout_result_t *r = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, 100);
     ASSERT_NOT_NULL(r);
     ASSERT_EQ(r->node_count, 1);
     ASSERT_STR_EQ(r->nodes[0].name, "main");
@@ -346,7 +346,7 @@ TEST(layout_two_connected) {
     cbm_edge_t edge = {.project = "test", .source_id = id1, .target_id = id2, .type = "CALLS"};
     cbm_store_insert_edge(store, &edge);
 
-    cbm_layout_result_t *r = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, 100);
+    cbm_layout_result_t *r = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, 100);
     ASSERT_NOT_NULL(r);
     ASSERT_EQ(r->node_count, 2);
 
@@ -386,7 +386,7 @@ TEST(layout_respects_max_nodes) {
     }
 
     /* max_nodes=5 should return at most 5 */
-    cbm_layout_result_t *r = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, 5);
+    cbm_layout_result_t *r = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, 5);
     ASSERT_NOT_NULL(r);
     ASSERT_LTE(r->node_count, 5);
     ASSERT_EQ(r->total_nodes, 20);
@@ -420,7 +420,7 @@ TEST(layout_clamps_render_cap_from_env) {
         cbm_store_upsert_node(store, &n);
     }
 
-    cbm_layout_result_t *r = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, 50000);
+    cbm_layout_result_t *r = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, 50000);
     ASSERT_NOT_NULL(r);
     ASSERT_LTE(r->node_count, 25);
     ASSERT_EQ(r->total_nodes, 40);
@@ -464,7 +464,7 @@ TEST(layout_honors_budget_above_default) {
     }
 
     cbm_layout_result_t *r =
-        cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, BUDGET_NODES);
+        cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, BUDGET_NODES);
     ASSERT_NOT_NULL(r);
     ASSERT_EQ(r->node_count, BUDGET_NODES);
     ASSERT_EQ(r->total_nodes, BUDGET_NODES);
@@ -502,8 +502,8 @@ TEST(layout_deterministic) {
     cbm_store_upsert_node(store, &n2);
 
     /* Run twice, check positions match */
-    cbm_layout_result_t *r1 = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, 100);
-    cbm_layout_result_t *r2 = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, 100);
+    cbm_layout_result_t *r1 = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, 100);
+    cbm_layout_result_t *r2 = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, 100);
     ASSERT_NOT_NULL(r1);
     ASSERT_NOT_NULL(r2);
     ASSERT_EQ(r1->node_count, r2->node_count);
@@ -535,7 +535,7 @@ TEST(layout_to_json) {
                     .end_line = 5};
     cbm_store_upsert_node(store, &n);
 
-    cbm_layout_result_t *r = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, 100);
+    cbm_layout_result_t *r = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, 100);
     ASSERT_NOT_NULL(r);
 
     char *json = cbm_layout_to_json(r);
@@ -556,12 +556,12 @@ TEST(layout_to_json) {
 
 TEST(layout_null_inputs) {
     /* NULL store → NULL result */
-    cbm_layout_result_t *r = cbm_layout_compute(NULL, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, 100);
+    cbm_layout_result_t *r = cbm_layout_compute(NULL, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, 100);
     ASSERT_NULL(r);
 
     /* NULL project → NULL result */
     cbm_store_t *store = cbm_store_open_memory();
-    r = cbm_layout_compute(store, NULL, CBM_LAYOUT_OVERVIEW, NULL, 0, 100);
+    r = cbm_layout_compute(store, NULL, CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, 100);
     ASSERT_NULL(r);
 
     /* cbm_layout_free(NULL) should not crash */
@@ -674,7 +674,7 @@ TEST(layout_dead_code_classification) {
     cbm_store_insert_edge(store, &e2);
     cbm_store_insert_edge(store, &e3);
 
-    cbm_layout_result_t *r = cbm_layout_compute(store, "dc", CBM_LAYOUT_OVERVIEW, NULL, 0, 100);
+    cbm_layout_result_t *r = cbm_layout_compute(store, "dc", CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, 100);
     ASSERT_NOT_NULL(r);
 
     const cbm_layout_node_t *ln;
@@ -800,7 +800,7 @@ static void layout_octree_guard_child(void) {
             _exit(2);
     }
 
-    cbm_layout_result_t *r = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, 100);
+    cbm_layout_result_t *r = cbm_layout_compute(store, "test", CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, 100);
     if (!r)
         _exit(3);
     if (r->node_count != 6)

@@ -1393,7 +1393,8 @@ static bool attach_missed_graph(yyjson_mut_doc *mdoc, yyjson_mut_val *mroot, cbm
                                 const char *project, double primary_radius) {
     char covproj[512];
     cbm_store_coverage_shadow_project(covproj, sizeof(covproj), project);
-    cbm_layout_result_t *ml = cbm_layout_compute(store, covproj, CBM_LAYOUT_OVERVIEW, NULL, 0, 0);
+    cbm_layout_result_t *ml =
+        cbm_layout_compute(store, covproj, CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, 0);
     if (!ml) {
         return false;
     }
@@ -1442,6 +1443,7 @@ static void handle_layout(cbm_http_conn_t *c, const cbm_http_req_t *req) {
     char project[256] = {0};
     char max_str[32] = {0};
     char graph_str[32] = {0};
+    char path_str[1024] = {0};
 
     if (!cbm_http_query_param(req->query, "project", project, (int)sizeof(project)) ||
         project[0] == '\0') {
@@ -1454,6 +1456,16 @@ static void handle_layout(cbm_http_conn_t *c, const cbm_http_req_t *req) {
         int v = atoi(max_str);
         if (v > 0)
             max_nodes = v;
+    }
+
+    /* path (dev/layout-path-filter): glob on file_path, scopes which nodes
+     * are eligible before max_nodes truncation — lets the UI load a small
+     * budget from within a specific folder instead of sampling top-N across
+     * the whole project. NULL/absent = no scoping (existing behavior). */
+    const char *path_filter = NULL;
+    if (cbm_http_query_param(req->query, "path", path_str, (int)sizeof(path_str)) &&
+        path_str[0] != '\0') {
+        path_filter = path_str;
     }
 
     /* graph=missed (#963): lay out the derived miss graph (shadow project
@@ -1485,8 +1497,8 @@ static void handle_layout(cbm_http_conn_t *c, const cbm_http_req_t *req) {
         return;
     }
 
-    cbm_layout_result_t *layout =
-        cbm_layout_compute(store, scoped_project, CBM_LAYOUT_OVERVIEW, NULL, 0, max_nodes);
+    cbm_layout_result_t *layout = cbm_layout_compute(
+        store, scoped_project, CBM_LAYOUT_OVERVIEW, NULL, 0, path_filter, max_nodes);
 
     /* Find linked projects from CROSS_* edges. Keep `store` open through the
      * linked-projects loop below so we can resolve target Route QNs against
@@ -1556,7 +1568,7 @@ static void handle_layout(cbm_http_conn_t *c, const cbm_http_req_t *req) {
 
         /* Keep lp_store open through cross_edges resolution below. */
         cbm_layout_result_t *lp_layout =
-            cbm_layout_compute(lp_store, linked[li], CBM_LAYOUT_OVERVIEW, NULL, 0, max_nodes);
+            cbm_layout_compute(lp_store, linked[li], CBM_LAYOUT_OVERVIEW, NULL, 0, NULL, max_nodes);
 
         if (!lp_layout) {
             cbm_store_close(lp_store);
