@@ -262,12 +262,24 @@ export function GraphTab({ project }: GraphTabProps) {
       if (!filteredData || !path || nodeIds.size === 0) {
         setHighlightedIds(null);
         setSelectedPath(null);
+        setSelectedNode(null);
         setCameraTarget(null);
         return;
       }
       setSelectedPath(path);
       setHighlightedIds(nodeIds);
       setCameraTarget(computeCameraTarget(filteredData.nodes, nodeIds));
+
+      /* A single-node selection (a leaf function/file, or a search result)
+       * also opens the detail panel, same as clicking the node directly in
+       * the 3D scene. A multi-node folder selection has no single node to
+       * show detail for, so it only highlights + frames the camera. */
+      if (nodeIds.size === 1) {
+        const [onlyId] = nodeIds;
+        setSelectedNode(filteredData.nodes.find((n) => n.id === onlyId) ?? null);
+      } else {
+        setSelectedNode(null);
+      }
     },
     [filteredData],
   );
