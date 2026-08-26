@@ -20,6 +20,7 @@ import {
   type CameraTarget,
 } from "./GraphScene";
 import { Sidebar } from "./Sidebar";
+import { PathFilterPanel } from "./PathFilterPanel";
 import { FilterPanel } from "./FilterPanel";
 import { NodeDetailPanel } from "./NodeDetailPanel";
 import { MissedCallout } from "./MissedCallout";
@@ -98,6 +99,44 @@ export function GraphTab({ project }: GraphTabProps) {
       setBudget({ project, value: parsed });
     }
   }, [budgetDraft, project, budget.value]);
+
+  /* Path filter — scopes which nodes are eligible for the layout BEFORE the
+   * node budget truncates the result (glob on file_path per selected
+   * folder, server-side via /api/layout?path=). Lets a small folder in a
+   * huge repo load fully instead of hoping it survives a flat top-N sample
+   * across everything. Multiple folders fan out to one request per folder
+   * and merge client-side (see fetchOverview in useGraphData) since the
+   * backend only accepts one glob at a time. */
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const togglePath = useCallback((path: string) => {
+    setSelectedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
+  const clearPaths = useCallback(() => setSelectedPaths(new Set()), []);
+
+  /* A bare folder path with no glob wildcard (e.g. "util") is treated
+   * server-side as a path-SUBSTRING match, not a folder-boundary match — it
+   * would also pull in unrelated files like "utility/foo.c" anywhere in the
+   * repo. Appending "/*" forces explicit glob semantics anchored to this
+   * folder's children. */
+  const pathGlobs = useMemo(
+    () => [...selectedPaths].map((p) => `${p}/*`),
+    [selectedPaths],
+  );
+
+  /* The folder picker needs the FULL (unscoped) node list to offer every
+   * folder — not just whatever the current, possibly path-scoped, response
+   * contains, or picking one folder would make every sibling folder vanish
+   * from the picker. Snapshot data.nodes only from unscoped loads; once
+   * scoped, the picker keeps browsing this frozen catalog. */
+  const [folderCatalog, setFolderCatalog] = useState<GraphNode[]>([]);
+  useEffect(() => {
+    if (data && selectedPaths.size === 0) setFolderCatalog(data.nodes);
+  }, [data, selectedPaths]);
 
   /* Filter state — all enabled by default */
   const [enabledLabels, setEnabledLabels] = useState<Set<string>>(new Set());
@@ -179,23 +218,29 @@ export function GraphTab({ project }: GraphTabProps) {
     hideTests,
   ]);
 
-  /* Re-read the persisted budget when the project changes… */
+  /* Re-read the persisted budget when the project changes… and drop any
+   * path scope / folder catalog from the previous project. */
   useEffect(() => {
     if (project) {
       const value = loadNodeBudget(project);
       setBudget({ project, value });
       setBudgetDraft(String(value));
+      setSelectedPaths(new Set());
+      setFolderCatalog([]);
     }
   }, [project]);
 
-  /* …and fetch only once budget and project agree (one fetch per change). */
+  /* …and fetch only once budget and project agree (one fetch per change).
+   * Re-fetches when the path selection changes too, so checking/unchecking
+   * a folder reloads the graph within that scope instead of requiring a
+   * manual Refresh. */
   useEffect(() => {
     if (project && budget.project === project) {
-      fetchOverview(project, budget.value);
+      fetchOverview(project, budget.value, "code", pathGlobs);
       setHighlightedIds(null);
       setSelectedPath(null);
     }
-  }, [project, budget, fetchOverview]);
+  }, [project, budget, pathGlobs, fetchOverview]);
 
   /* Missed skeleton: offset into place and paint white — a ghost of the
    * files the graph could not fully cover, sitting beside the galaxy. */
@@ -429,6 +474,12 @@ export function GraphTab({ project }: GraphTabProps) {
           missedCount={data?.missed_graph?.nodes.filter((n) => n.label === "File").length ?? 0}
           onToggleMissedView={() => setShowMissedSkeleton((v) => !v)}
         />
+        <PathFilterPanel
+          nodes={folderCatalog}
+          selectedPaths={selectedPaths}
+          onToggle={togglePath}
+          onClear={clearPaths}
+        />
         <Sidebar
           nodes={filteredData.nodes}
           onSelectPath={handleSelectPath}
@@ -542,7 +593,7 @@ export function GraphTab({ project }: GraphTabProps) {
                   setSelectedPath(null);
                   setSelectedNode(null);
                   setCameraTarget(null);
-                  fetchOverview(project, budget.value);
+                  fetchOverview(project, budget.value, "code", pathGlobs);
                 }}
               >
                 Refresh

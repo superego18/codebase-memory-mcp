@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import type { GraphData } from "../lib/types";
+import type { GraphData, GraphEdge, GraphNode } from "../lib/types";
 
 export interface LoadProgress {
   receivedBytes: number;
@@ -15,6 +15,7 @@ interface UseGraphDataResult {
     project: string,
     maxNodes?: number,
     graph?: "code" | "missed",
+    pathFilters?: string[],
   ) => void;
   fetchDetail: (project: string, centerNode: string) => void;
 }
@@ -45,9 +46,11 @@ export async function fetchLayout(
   maxNodes = GRAPH_RENDER_NODE_LIMIT,
   onProgress?: (progress: LoadProgress) => void,
   graph: GraphVariant = "code",
+  pathFilter?: string,
 ): Promise<GraphData> {
   const params = new URLSearchParams({ project, max_nodes: String(maxNodes) });
   if (graph === "missed") params.set("graph", "missed");
+  if (pathFilter) params.set("path", pathFilter);
   const res = await fetch(`/api/layout?${params}`);
 
   if (!res.ok) {
@@ -84,6 +87,30 @@ export async function fetchLayout(
   return JSON.parse(new TextDecoder().decode(merged));
 }
 
+/* The backend's ?path= only takes one glob, so a multi-folder selection
+ * fans out to one request per folder and merges the results client-side —
+ * no server change needed. Nodes/edges that show up in more than one
+ * folder's response (e.g. a shared boundary edge) are deduped. missed_graph
+ * and linked_projects are taken from the first response only; combining
+ * those across folders isn't needed for path-scoping the main graph. */
+function mergeGraphData(results: GraphData[]): GraphData {
+  const nodeById = new Map<number, GraphNode>();
+  const edgeKey = (e: GraphEdge) => `${e.source}\0${e.target}\0${e.type}`;
+  const edges = new Map<string, GraphEdge>();
+  for (const r of results) {
+    for (const n of r.nodes) nodeById.set(n.id, n);
+    for (const e of r.edges) edges.set(edgeKey(e), e);
+  }
+  const nodes = [...nodeById.values()];
+  return {
+    nodes,
+    edges: [...edges.values()],
+    total_nodes: nodes.length,
+    missed_graph: results[0]?.missed_graph,
+    linked_projects: results[0]?.linked_projects,
+  };
+}
+
 const NO_PROGRESS: LoadProgress = { receivedBytes: 0, totalBytes: null };
 
 export function useGraphData(): UseGraphDataResult {
@@ -93,13 +120,28 @@ export function useGraphData(): UseGraphDataResult {
   const [progress, setProgress] = useState<LoadProgress>(NO_PROGRESS);
 
   const fetchOverview = useCallback(
-    async (project: string, maxNodes?: number, graph: GraphVariant = "code") => {
+    async (
+      project: string,
+      maxNodes?: number,
+      graph: GraphVariant = "code",
+      pathFilters?: string[],
+    ) => {
       setLoading(true);
       setError(null);
       setProgress(NO_PROGRESS);
       try {
-        const result = await fetchLayout(project, maxNodes, setProgress, graph);
-        setData(result);
+        if (pathFilters && pathFilters.length > 1) {
+          /* Progress reporting doesn't compose cleanly across N parallel
+           * streamed fetches, so multi-path loads skip the live byte
+           * counter — each folder is small by construction anyway. */
+          const results = await Promise.all(
+            pathFilters.map((p) => fetchLayout(project, maxNodes, undefined, graph, p)),
+          );
+          setData(mergeGraphData(results));
+        } else {
+          const result = await fetchLayout(project, maxNodes, setProgress, graph, pathFilters?.[0]);
+          setData(result);
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to fetch layout");
       } finally {

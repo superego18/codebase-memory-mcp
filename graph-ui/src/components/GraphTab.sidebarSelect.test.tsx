@@ -93,8 +93,13 @@ describe("GraphTab sidebar node selection", () => {
     /* Expand the folder tree down to a directory containing both sample
      * functions and click the directory row itself (a multi-node
      * selection) — no single node to show detail for, so highlighting
-     * only. */
-    fireEvent.click(await screen.findByText("source/OnRoadMarking"));
+     * only. The same folder name also renders in the PathFilterPanel's
+     * (checkbox-only, non-clickable) tree above it, so disambiguate by
+     * picking the row that's an actual button — Sidebar's TreeItem. */
+    const matches = await screen.findAllByText("source/OnRoadMarking");
+    const sidebarRow = matches.find((el) => el.closest("button"));
+    expect(sidebarRow).toBeDefined();
+    fireEvent.click(sidebarRow!.closest("button")!);
 
     expect(screen.queryByText("Total")).not.toBeInTheDocument();
   });
