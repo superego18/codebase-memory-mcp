@@ -2003,6 +2003,61 @@ TEST(tool_get_code_snippet_clips_whole_file_node) {
     PASS();
 }
 
+TEST(tool_get_code_snippet_keeps_single_line_function_range) {
+    char tmp[256];
+    snprintf(tmp, sizeof(tmp), "/tmp/cbm_single_line_snip_XXXXXX");
+    ASSERT_NOT_NULL(cbm_mkdtemp(tmp));
+    char proj_dir[512];
+    snprintf(proj_dir, sizeof(proj_dir), "%s/project", tmp);
+    cbm_mkdir(proj_dir);
+    char src_path[600];
+    snprintf(src_path, sizeof(src_path), "%s/ChassisCANData.cpp", proj_dir);
+    FILE *fp = fopen(src_path, "w");
+    ASSERT_NOT_NULL(fp);
+    for (int i = 1; i < 42; i++) {
+        fprintf(fp, "// pad %02d\n", i);
+    }
+    fprintf(fp, "void F_vCheckDLC(void) {}\n");
+    fprintf(fp, "void F_vCheckEth(void) {}\n");
+    fprintf(fp, "void InitializeAnimalRecord(void) {}\n");
+    fclose(fp);
+
+    cbm_mcp_server_t *srv = cbm_mcp_server_new(NULL);
+    ASSERT_NOT_NULL(srv);
+    cbm_store_t *st = cbm_mcp_server_store(srv);
+    const char *proj = "test-project";
+    cbm_mcp_server_set_project(srv, proj);
+    cbm_store_upsert_project(st, proj, proj_dir);
+
+    cbm_node_t fn = {0};
+    fn.project = proj;
+    fn.label = "Function";
+    fn.name = "F_vCheckDLC";
+    fn.qualified_name = "test-project.ChassisCANData.F_vCheckDLC";
+    fn.file_path = "ChassisCANData.cpp";
+    fn.start_line = 42;
+    fn.end_line = 42;
+    ASSERT_GT(cbm_store_upsert_node(st, &fn), 0);
+
+    char *resp = cbm_mcp_server_handle(
+        srv, "{\"jsonrpc\":\"2.0\",\"id\":71,\"method\":\"tools/call\",\"params\":{"
+             "\"name\":\"get_code_snippet\",\"arguments\":{\"project\":\"test-project\","
+             "\"qualified_name\":\"test-project.ChassisCANData.F_vCheckDLC\"}}}");
+    ASSERT_NOT_NULL(resp);
+    char *inner = extract_text_content(resp);
+    ASSERT_NOT_NULL(inner);
+    ASSERT_NOT_NULL(strstr(inner, "\"start_line\":42"));
+    ASSERT_NOT_NULL(strstr(inner, "\"end_line\":42"));
+    ASSERT_NOT_NULL(strstr(inner, "void F_vCheckDLC(void) {}"));
+    ASSERT_NULL(strstr(inner, "void F_vCheckEth(void) {}"));
+    ASSERT_NULL(strstr(inner, "void InitializeAnimalRecord(void) {}"));
+    free(inner);
+    free(resp);
+    cbm_mcp_server_free(srv);
+    th_rmtree(tmp);
+    PASS();
+}
+
 /* EVERY tool, not just the one that was reported.
  *
  * The duplication was invisible per-tool: each result looked reasonable on its
@@ -11318,6 +11373,7 @@ SUITE(mcp) {
     RUN_TEST(tool_trace_totals_respect_test_filter_tests_root_subtree_issue1294);
     RUN_TEST(tool_get_architecture_cycles_detects_scc);
     RUN_TEST(tool_get_code_snippet_clips_whole_file_node);
+    RUN_TEST(tool_get_code_snippet_keeps_single_line_function_range);
     RUN_TEST(tool_search_graph_includes_node_properties);
     RUN_TEST(tool_search_graph_toon_never_leaks_internal_fields);
     RUN_TEST(tool_lean_defaults_schema_and_status);
