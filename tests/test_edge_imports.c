@@ -574,6 +574,49 @@ TEST(ei_cpp_header_include_targets_header_file) {
     PASS();
 }
 
+/* C: a deep relative include ("../../../root.h", more than one directory
+ * level up) must still resolve to the header's own File node, exactly like
+ * ei_cpp_header_include_targets_header_file's single-level case. Before the
+ * fix, resolve_header_include only stripped a leading "./" — anything with
+ * ".." fell through to the generic module-path resolver, which is
+ * extension-stripping and can only ever land on the header's Module node,
+ * never its File node. */
+TEST(ei_c_deep_relative_include_targets_header_file) {
+    static const EILangFile f[] = {
+        {"root.h", "#pragma once\nint root_value(void);\n"},
+        {"a/b/c/main.c", "#include \"../../../root.h\"\n\n"
+                         "int main(void) { return root_value(); }\n"},
+    };
+
+    EILangProj lp;
+    cbm_store_t *store = ei_index_files(&lp, f, 2);
+    ASSERT_NOT_NULL(store);
+
+    int64_t main_id = ei_node_id_for_file_label(store, lp.project, "a/b/c/main.c", "File");
+    int64_t header_id = ei_node_id_for_file_label(store, lp.project, "root.h", "File");
+    ASSERT_GT(main_id, 0);
+    ASSERT_GT(header_id, 0);
+
+    cbm_edge_t *edges = NULL;
+    int edge_count = 0;
+    int rc = cbm_store_find_edges_by_source_type(store, main_id, "IMPORTS", &edges, &edge_count);
+    ASSERT_EQ(rc, CBM_STORE_OK);
+    ASSERT_TRUE(edge_count >= 1);
+
+    bool saw_header_file = false;
+    for (int i = 0; i < edge_count; i++) {
+        if (edges[i].target_id == header_id) {
+            saw_header_file = true;
+        }
+    }
+    cbm_store_free_edges(edges, edge_count);
+
+    ASSERT_TRUE(saw_header_file);
+
+    ei_cleanup(&lp, store);
+    PASS();
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * RED REPRODUCTION — Rust
  *
@@ -1038,6 +1081,7 @@ SUITE(edge_imports) {
     RUN_TEST(ei_go_blank_import);
     RUN_TEST(ei_go_two_consumers_same_package);
     RUN_TEST(ei_cpp_header_include_targets_header_file);
+    RUN_TEST(ei_c_deep_relative_include_targets_header_file);
 
     /* ── RED REPRODUCTIONS — Rust (expected to FAIL until pipeline fixed) ── */
     RUN_TEST(ei_rust_mod_plus_use);

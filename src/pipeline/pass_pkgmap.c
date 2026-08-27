@@ -1646,6 +1646,73 @@ static const cbm_gbuf_node_t *resolve_exact_file_node(const cbm_pipeline_ctx_t *
     return NULL;
 }
 
+/* Pop the last "/"-delimited segment off buf in place (clears buf if none
+ * left) — used to walk ".." segments in a #include path. */
+static void path_pop_last_segment(char *buf) {
+    char *last = strrchr(buf, '/');
+    if (last) {
+        *last = '\0';
+    } else {
+        buf[0] = '\0';
+    }
+}
+
+/* Resolve a "./"/"../"-relative #include path against the including file's
+ * own directory into a clean, project-relative path with no "." / ".."
+ * segments left. Unlike fqn.c's JS-style relative resolver, this keeps the
+ * leaf's extension intact — a header's File node is keyed on its full
+ * filename (resolve_exact_file_node does a literal suffix match), so
+ * stripping ".h" would just make it unresolvable a different way. Handles
+ * an arbitrary number of ".." segments; resolve_header_include's plain
+ * leading-"./"-strip only covered a single directory level, so any deeper
+ * relative include (e.g. "../../foo.h") fell through to the generic
+ * module-path resolver and landed on a Module node instead of the header's
+ * own File node. Returns NULL if module_path isn't dot-relative. */
+static char *normalize_relative_include(const char *source_rel, const char *module_path) {
+    if (!module_path || module_path[0] != '.') {
+        return NULL;
+    }
+    char *dir = path_dirname(source_rel ? source_rel : "");
+    if (!dir) {
+        return NULL;
+    }
+    char buf[PKGMAP_PATH_BUF];
+    snprintf(buf, sizeof(buf), "%s", dir);
+    free(dir);
+
+    const char *p = module_path;
+    while (*p) {
+        while (*p == '/') {
+            p++;
+        }
+        if (!*p) {
+            break;
+        }
+        const char *seg_start = p;
+        while (*p && *p != '/') {
+            p++;
+        }
+        size_t seg_len = (size_t)(p - seg_start);
+        if (seg_len == 1 && seg_start[0] == '.') {
+            continue;
+        }
+        if (seg_len == 2 && seg_start[0] == '.' && seg_start[1] == '.') {
+            path_pop_last_segment(buf);
+            continue;
+        }
+        size_t buf_len = strlen(buf);
+        if (buf_len + 1 + seg_len >= sizeof(buf)) {
+            return NULL;
+        }
+        if (buf_len > 0) {
+            buf[buf_len++] = '/';
+        }
+        memcpy(buf + buf_len, seg_start, seg_len);
+        buf[buf_len + seg_len] = '\0';
+    }
+    return buf[0] ? strdup(buf) : NULL;
+}
+
 static const cbm_gbuf_node_t *resolve_header_include(const cbm_pipeline_ctx_t *ctx,
                                                      const char *source_rel,
                                                      const char *source_file_qn,
@@ -1678,6 +1745,15 @@ static const cbm_gbuf_node_t *resolve_header_include(const cbm_pipeline_ctx_t *c
             if (exact) {
                 return exact;
             }
+        }
+    }
+
+    char *normalized = normalize_relative_include(source_rel, module_path);
+    if (normalized) {
+        exact = resolve_exact_file_node(ctx, normalized, source_file_qn);
+        free(normalized);
+        if (exact) {
+            return exact;
         }
     }
 

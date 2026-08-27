@@ -1,0 +1,28 @@
+# Personal, fast iteration workflow: run one test suite on Linux (much
+# quicker than the Windows msys2 build) to verify a fix before it goes into
+# personal-windows-build.yml's combined branch.
+name: Personal Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      suites:
+        description: 'Comma/space-separated suite names (scripts/test.sh --suites)'
+        type: string
+        default: 'edge_imports'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
+      - name: Run suite(s)
+        run: scripts/test.sh --suites "${{ inputs.suites }}" CC=gcc CXX=g++
