@@ -71,6 +71,33 @@ static CBMFileResult *extract_c_family(const char *src, CBMLanguage language) {
     return cbm_extract_file(src, (int)strlen(src), language, "test", path, 0, NULL, NULL);
 }
 
+TEST(clsp_single_line_empty_function_ranges_are_single_line) {
+    CBMFileResult *r = extract_cpp("\n"
+                                   "void F_vCheckDLC(void) {}\n"
+                                   "void F_vCheckEth(void) {}\n"
+                                   "void InitializeAnimalRecord(void) {}\n"
+                                   "");
+    ASSERT_NOT_NULL(r);
+
+    const char *names[] = {"F_vCheckDLC", "F_vCheckEth", "InitializeAnimalRecord"};
+    const int lines[] = {2, 3, 4};
+    for (int n = 0; n < 3; n++) {
+        const CBMDefinition *def = NULL;
+        for (int i = 0; i < r->defs.count; i++) {
+            if (r->defs.items[i].name && strcmp(r->defs.items[i].name, names[n]) == 0) {
+                def = &r->defs.items[i];
+                break;
+            }
+        }
+        ASSERT_NOT_NULL(def);
+        ASSERT_EQ(def->start_line, lines[n]);
+        ASSERT_EQ(def->end_line, lines[n]);
+    }
+
+    cbm_free_result(r);
+    PASS();
+}
+
 TEST(clsp_simple_var_decl) {
     CBMFileResult *r = extract_c("\n"
                                  "struct Foo {\n"
@@ -16064,6 +16091,7 @@ SUITE(c_lsp) {
     RUN_TEST(clsp_preprocessed_destructor_rewrite_respects_origin_during_rewrite);
     RUN_TEST(clsp_tier2_shared_registry_readonly_c);
     RUN_TEST(clsp_tier2_shared_registry_readonly_cpp);
+    RUN_TEST(clsp_single_line_empty_function_ranges_are_single_line);
     RUN_TEST(seal_py_shared_registry_readonly);
     RUN_TEST(seal_py_shared_registry_readonly_fields);
     RUN_TEST(seal_cs_shared_registry_readonly);

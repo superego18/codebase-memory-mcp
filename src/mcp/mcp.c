@@ -8642,7 +8642,7 @@ static char *build_snippet_response(cbm_mcp_server_t *srv, cbm_node_t *node,
     char *root_path = get_project_root(srv, node->project);
 
     int start = node->start_line > 0 ? node->start_line : SKIP_ONE;
-    int end = node->end_line > start ? node->end_line : start + SNIPPET_DEFAULT_LINES;
+    int end = node->end_line >= start ? node->end_line : start + SNIPPET_DEFAULT_LINES;
     /* Context-bomb guard: a structural node (Module/File) spans its whole file,
      * so an unclipped read returned the ENTIRE source — a field-eval agent that
      * fell back to a Module snippet pulled 400KB in one call. Cap the line span
